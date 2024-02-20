@@ -478,8 +478,8 @@ func (m *Migrator) migrate(file, project string) {
 			defer wg.Done()
 			m.clone(serviceName)
 		}(filescanner.Text())
-		wg.Wait()
 	}
+	wg.Wait()
 
 	m.kustomize()
 }
