@@ -52,6 +52,7 @@ type Service struct {
 type BuildDirs struct {
 	Root                     string
 	Build                    string
+	AnsibleDeployers         string
 	AnsibleDeployerOverrides string
 }
 
@@ -80,6 +81,7 @@ func NewMigrator(file, project string) *Migrator {
 		Dirs: &BuildDirs{
 			Root:                     "build",
 			Build:                    fmt.Sprintf("%s/%s", "build", project),
+			AnsibleDeployers:         "build/ansible-deployers",
 			AnsibleDeployerOverrides: "build/ansible-deployers/files/kubernetes_environment_overrides",
 		},
 	}
@@ -147,6 +149,8 @@ func (m *Migrator) clone(serviceName string) {
 		if err != nil {
 			fmt.Println("err", err)
 		}
+	} else {
+		fmt.Println(fmt.Sprintf("%s Service %s does not contain a .kube directory, skipping...", color.Warning(), color.Repository(serviceName)))
 	}
 	// Regardless of whether the cloned serviceName contained a ".kube" directory, remove it.
 	// This may change, especially if the user wants all the repos in a project on their
@@ -184,6 +188,13 @@ func (m *Migrator) kustomize() {
 		fmt.Fprintln(os.Stderr, "Could not list contents of the build directory")
 		//		log.Fatal(err)
 	}
+	foregroundServicesFile := fmt.Sprintf("%s/vars/aion_foreground_services.yml", m.Dirs.AnsibleDeployers)
+	foregroundServices, err := os.ReadFile(foregroundServicesFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not read file `%s`", color.Warning(), foregroundServicesFile))
+		//				log.Fatal(err)
+	}
+
 	for _, dir := range dirs {
 		repo := dir.Name()
 		appDir := fmt.Sprintf("%s/%s", m.Dirs.Build, repo)
@@ -256,6 +267,21 @@ func (m *Migrator) kustomize() {
 				before, _, _ := strings.Cut(filename, "-")
 				defaultManifestValues := fmt.Sprintf("%s/environments/defaults-%s.yaml", kubeDir, before)
 				tokenized := tokenizeManifests(getManifestValues(defaultManifestValues), string(content))
+
+				// This is just fucking horrible.  Since `ansible-deployers` was injecting this into the
+				// manifest via a Python script, there's not a "nice" way to do it here except by doing
+				// the same horrible thing (injection).
+				// If it were part of the templated Jinja manifest it wouldn't be nearly as ugly as this.
+				if strings.Contains(filename, "deployment") {
+					// We need to append the `nodeSelector` label to the tokenized string.
+					var nodeSelectorLabel string
+					if strings.Contains(string(foregroundServices), repo) {
+						nodeSelectorLabel = "node_type: application"
+					} else {
+						nodeSelectorLabel = "node_type: default"
+					}
+					tokenized = fmt.Sprintf("%s      nodeSelector:\n        %s", tokenized, nodeSelectorLabel)
+				}
 
 				// We're going to patch the Ingress, so don't include it in the list
 				// that will become the `resources` list in base/kustomization.yaml.
