@@ -44,9 +44,6 @@ type Service struct {
 	Image       string // TODO
 	Resources   []string
 	HasIngress  *string
-	// TODO We need to make the ConfigMap name unique across files.
-	// This should be revisited.
-	Unique string
 }
 
 type BuildDirs struct {
@@ -310,15 +307,6 @@ func (m *Migrator) kustomize() {
 			//			log.Fatal(err)
 		}
 
-		// For the ConfigMap merging to work, there has to be an `env` file in the base/ dir, even if
-		// it contains 0 bytes.
-		_, err = os.Create(fmt.Sprintf("%s/base/env", appDir))
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Could not create the empty `base/env` file")
-			//			log.Fatal(err)
-		}
-		defer f.Close()
-
 		// Create the `env` file in each overlays environment that will be used to generate the
 		// ConfigMap that will replace the embedding of the env vars in the Deployment.
 		// In addition, create the `kustomization.yaml` file in each overlays environment dir.
@@ -337,9 +325,6 @@ func (m *Migrator) kustomize() {
 			k.Environment = env
 			// TODO need the k.Image name!
 			k.Image = "TODO"
-			// TODO We need to make the ConfigMap name unique across files.
-			// This should be revisited.
-			k.Unique = rando(6)
 			err = m.Template.ExecuteTemplate(f, "kustomization_overlay.tpl", k)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Could not execute template `kustomization_overlay.tpl`")

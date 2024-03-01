@@ -6,8 +6,4 @@ resources:
   {{ range .Resources -}}
   - {{ . }}
   {{ end }}
-configMapGenerator:
-- name: env
-  envs:
-  - env
 
