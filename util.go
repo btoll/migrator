@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"reflect"
 	"strconv"
@@ -12,8 +11,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-const alphaLower = "abcdefghijklmnopqrstuvwxyz"
 
 func checkFileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
@@ -57,14 +54,6 @@ func mapMerge(maps ...map[string]interface{}) map[string]interface{} {
 		}
 	}
 	return res
-}
-
-func rando(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = alphaLower[rand.Intn(len(alphaLower))]
-	}
-	return string(b)
 }
 
 // Order matters. The last item in the slice will override anything/everything previously.
