@@ -12,7 +12,7 @@ import (
 var reImagePullPolicy = regexp.MustCompile(`^\s*(?P<ImagePullPolicy>imagePullPolicy:\s.*)\s*$`)
 
 // i'm so sorry
-func hackAndBeHappyDeployment(filename string) []byte {
+func hackAndBeHappyDeployment(filename, repoName string) []byte {
 	// Note that sometimes the misspelling `vairable` is spelled correctly, so
 	// we'll only look for the portion of the strings that aren't misspelled.
 	// For example, here is an example of one of the strings we need to remove:
@@ -28,7 +28,7 @@ func hackAndBeHappyDeployment(filename string) []byte {
 		"",
 		"          envFrom:",
 		"          - configMapRef:",
-		"              name: env",
+		fmt.Sprintf("              name: env-%s", repoName),
 		"",
 	}
 	file, err := os.Open(filename)

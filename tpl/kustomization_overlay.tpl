@@ -5,7 +5,7 @@ resources:
   {{ end }}
 
 configMapGenerator:
-- name: env
+- name: env-{{ .Name }}
   envs:
   - env
 

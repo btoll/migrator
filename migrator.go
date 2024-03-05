@@ -223,7 +223,7 @@ func (m *Migrator) kustomize() {
 				f := fmt.Sprintf("%s/%s", kubeDir, filename)
 				// Maybe fix up the manifests after variable substitution?
 				if strings.Contains(filename, "deployment") {
-					content = hackAndBeHappyDeployment(f)
+					content = hackAndBeHappyDeployment(f, repo)
 					//				} else if strings.Contains(filename, "ingress") {
 					//					content = hackAndBeHappyIngress(f)
 				} else {
