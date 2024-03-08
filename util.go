@@ -25,7 +25,7 @@ func getCertificateValues(mergedValues map[string]interface{}) (string, string, 
 			return apexDomain.(string), applicationRegion.(string), nil
 		}
 	}
-	return "", "", errors.New("Unable to retrieved certificate values")
+	return "", "", errors.New("Unable to retrieve certificate values")
 }
 
 func getManifestValues(filename string) ManifestValues {

@@ -406,11 +406,11 @@ func (m *Migrator) kustomize() {
 				// Get some certificate values, without which nothing can be looked up.
 				apexDomain, applicationRegion, err := getCertificateValues(mergedValues)
 				if err != nil {
-					fmt.Println(fmt.Sprintf("%s %s", color.Error(), err))
+					fmt.Println(fmt.Sprintf("  %s %s", color.Error(), err))
 				}
 				contents, err := os.ReadFile("build/ansible-deployers/vars/certificates.yml")
 				if err != nil {
-					fmt.Println(err, fmt.Sprintf("%s Could not read the certificates file", color.Error()))
+					fmt.Println(fmt.Sprintf("%s Could not read the certificates file", color.Error()))
 				}
 				c := &C{}
 				err = yaml.Unmarshal(contents, &c)
@@ -423,17 +423,17 @@ func (m *Migrator) kustomize() {
 					if certOK {
 						tokenized = strings.ReplaceAll(tokenized, "{{ certificates_by_domain_and_region[apex_domain][application_region] }}", cert)
 					} else {
-						fmt.Println("There is no application region certification")
+						fmt.Println(fmt.Sprintf("%s There is no application region certification", color.Warning()))
 					}
 				} else {
-					fmt.Println("There are no certifications by application region")
+					fmt.Println(fmt.Sprintf("%s There are no certifications by application region", color.Warning()))
 					// Fall back to the old method.
 					// See `ansible-deployers/vars/certificates.yml`.
 					cert, certOK := c.Certificates[apexDomain]
 					if certOK {
 						tokenized = strings.ReplaceAll(tokenized, "{{ certificates[apex_domain] }}", cert)
 					} else {
-						fmt.Println("There is no certification")
+						fmt.Println(fmt.Sprintf("%s There is no certification", color.Warning()))
 					}
 				}
 
@@ -482,7 +482,6 @@ func (m *Migrator) migrate(file, project string) {
 	defer readfile.Close()
 
 	filescanner := bufio.NewScanner(readfile)
-	filescanner.Split(bufio.ScanLines)
 	for filescanner.Scan() {
 		wg.Add(1)
 		go func(serviceName string) {
