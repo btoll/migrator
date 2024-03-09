@@ -15,6 +15,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type RepositoryNames []string
+
 // TODO
 // - clean up all the fmt.Sprintf file interpolations.
 
@@ -54,7 +56,7 @@ type BuildDirs struct {
 }
 
 type Migrator struct {
-	Project      string
+	Project      *Project
 	Environments []string
 	ReposFile    string
 	TplExt       string
@@ -62,7 +64,20 @@ type Migrator struct {
 	Dirs         *BuildDirs
 }
 
-func NewMigrator(file, project string) *Migrator {
+type Login struct {
+	Username string
+	Password string
+}
+
+type Project struct {
+	Name            string
+	Filename        string
+	UseLogin        bool
+	Login           *Login
+	RepositoryNames *RepositoryNames
+}
+
+func NewMigrator(project *Project) *Migrator {
 	tpl, err := template.ParseGlob("tpl/*")
 	if err != nil {
 		fmt.Println("err", err)
@@ -72,12 +87,11 @@ func NewMigrator(file, project string) *Migrator {
 	return &Migrator{
 		Project:      project,
 		Environments: []string{"production", "beta", "development"},
-		ReposFile:    file,
 		TplExt:       ".j2",
 		Template:     tpl,
 		Dirs: &BuildDirs{
 			Root:                     "build",
-			Build:                    fmt.Sprintf("%s/%s", "build", project),
+			Build:                    fmt.Sprintf("%s/%s", "build", project.Name),
 			AnsibleDeployers:         "build/ansible-deployers",
 			AnsibleDeployerOverrides: "build/ansible-deployers/files/kubernetes_environment_overrides",
 		},
@@ -465,7 +479,7 @@ func (m *Migrator) kustomize() {
 	}
 }
 
-func (m *Migrator) migrate(file, project string) {
+func (m *Migrator) migrate() {
 	// Create build dirs, i.e., "build/aion".
 	err := os.MkdirAll(m.Dirs.Build, os.ModePerm)
 	if err != nil {
@@ -473,21 +487,31 @@ func (m *Migrator) migrate(file, project string) {
 		//		log.Fatal(err)
 	}
 
-	// Contents will never be large enough to need to chunk or buffer.
-	readfile, err := os.Open(file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Could not open repositories file")
-		//		log.Fatal(err)
-	}
-	defer readfile.Close()
+	if !m.Project.UseLogin {
+		// Contents will never be large enough to need to chunk or buffer.
+		readfile, err := os.Open(m.Project.Filename)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Could not open repositories file")
+			//		log.Fatal(err)
+		}
+		defer readfile.Close()
 
-	filescanner := bufio.NewScanner(readfile)
-	for filescanner.Scan() {
-		wg.Add(1)
-		go func(serviceName string) {
-			defer wg.Done()
-			m.clone(serviceName)
-		}(filescanner.Text())
+		filescanner := bufio.NewScanner(readfile)
+		for filescanner.Scan() {
+			wg.Add(1)
+			go func(serviceName string) {
+				defer wg.Done()
+				m.clone(serviceName)
+			}(filescanner.Text())
+		}
+	} else {
+		for _, repositoryName := range *m.Project.RepositoryNames {
+			wg.Add(1)
+			go func(serviceName string) {
+				defer wg.Done()
+				m.clone(serviceName)
+			}(repositoryName)
+		}
 	}
 	wg.Wait()
 
