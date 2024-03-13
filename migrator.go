@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"html/template"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/btoll/migrator/color"
 	"github.com/go-git/go-git/v5"
@@ -17,10 +17,12 @@ import (
 
 type RepositoryNames []string
 
+// Find intersection:
+// join <(sort errors/1) <(sort errors/2)
+// comm -12 <(sort errors/1) <(sort errors/2)
+
 // TODO
 // - clean up all the fmt.Sprintf file interpolations.
-
-var wg sync.WaitGroup
 
 type ManifestValues map[string]interface{}
 
@@ -49,11 +51,18 @@ type Service struct {
 }
 
 type BuildDirs struct {
-	Root                     string
 	Build                    string
+	Project                  string
+	Cloned                   string
 	AnsibleDeployers         string
 	AnsibleDeployerOverrides string
 }
+
+type Debug struct {
+	Files map[string]ServiceNames
+}
+
+type ServiceNames []string
 
 type Migrator struct {
 	Project      *Project
@@ -62,6 +71,7 @@ type Migrator struct {
 	TplExt       string
 	Template     *template.Template
 	Dirs         *BuildDirs
+	Debug        *Debug
 }
 
 type Login struct {
@@ -82,16 +92,25 @@ func NewMigrator(project *Project) *Migrator {
 	if err != nil {
 		fmt.Println("err", err)
 		fmt.Fprintln(os.Stderr, "Could not parse template globs")
-		//		log.Fatalln(err)
+		log.Fatalln(err)
 	}
 	return &Migrator{
 		Project:      project,
 		Environments: []string{"production", "beta", "development"},
 		TplExt:       ".j2",
 		Template:     tpl,
+		Debug: &Debug{
+			Files: map[string]ServiceNames{
+				"error":       ServiceNames{},
+				"master":      ServiceNames{},
+				"development": ServiceNames{},
+				"noKube":      ServiceNames{},
+			},
+		},
 		Dirs: &BuildDirs{
-			Root:                     "build",
-			Build:                    fmt.Sprintf("%s/%s", "build", project.Name),
+			Build:                    "build",
+			Project:                  fmt.Sprintf("%s/%s", "build", project.Name),
+			Cloned:                   "build/cloned",
 			AnsibleDeployers:         "build/ansible-deployers",
 			AnsibleDeployerOverrides: "build/ansible-deployers/files/kubernetes_environment_overrides",
 		},
@@ -99,37 +118,40 @@ func NewMigrator(project *Project) *Migrator {
 }
 
 func (m *Migrator) clone(serviceName string) {
-	appDir := fmt.Sprintf("%s/%s", m.Dirs.Build, serviceName)
-	tmpDir := fmt.Sprintf("%s-tmp", appDir)
+	clonedAppDir := fmt.Sprintf("%s/%s/%s", m.Dirs.Cloned, m.Project.Name, serviceName)
+	tmpClonedDir := fmt.Sprintf("%s", clonedAppDir)
 
 	// Get the `development` branch first, if there is one and fall back to the `master` branch.
 	// NOTE: The `go-git` library wasn't returning all of the branches.
 	var branchName plumbing.ReferenceName
 	branchName = "refs/heads/development"
-	_, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
+	_, err := git.PlainClone(tmpClonedDir, false, &git.CloneOptions{
 		URL:           fmt.Sprintf("git@bitbucket.org:pecteam/%s", serviceName),
 		Progress:      nil,
 		ReferenceName: branchName,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not clone the `%s` branch for the `%s` repository", color.Warning(), branchName, serviceName))
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not clone the `%s` branch for the `%s` repository, trying master...", color.Warning(), branchName, serviceName))
 		branchName = "refs/heads/master"
-		_, err = git.PlainClone(tmpDir, false, &git.CloneOptions{
+		_, err = git.PlainClone(tmpClonedDir, false, &git.CloneOptions{
 			URL:           fmt.Sprintf("git@bitbucket.org:pecteam/%s", serviceName),
 			Progress:      nil,
 			ReferenceName: branchName,
 		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not clone the `%s` branch for the `%s` repository", color.Warning(), branchName, serviceName))
+			fmt.Printf("%s err %s\n", serviceName, err)
+			m.Debug.Files["error"] = append(m.Debug.Files["error"], serviceName)
 		} else {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("   %s Cloned the %s branch for the %s repository", color.Info(), color.Branch(string(branchName)), color.Repository(serviceName)))
+			m.Debug.Files["master"] = append(m.Debug.Files["master"], serviceName)
 		}
-		//		log.Fatal(err)
 	} else {
+		m.Debug.Files["development"] = append(m.Debug.Files["development"], serviceName)
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("   %s Cloned the %s branch for the %s repository", color.Info(), color.Branch(string(branchName)), color.Repository(serviceName)))
 	}
 
-	ansibleDeployersDir := fmt.Sprintf("%s/ansible-deployers", m.Dirs.Root)
+	ansibleDeployersDir := fmt.Sprintf("%s/ansible-deployers", m.Dirs.Build)
 	if !checkFileExists(ansibleDeployersDir) {
 		_, err := git.PlainClone(ansibleDeployersDir, false, &git.CloneOptions{
 			URL:      "git@bitbucket.org:pecteam/ansible-deployers.git",
@@ -137,39 +159,30 @@ func (m *Migrator) clone(serviceName string) {
 		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not clone `ansible-deployers`", color.Error()))
-			//			log.Fatal(err)
+			log.Fatal(err)
 		}
 	}
+}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Could not get the cwd")
-		//		log.Fatal(err)
-	}
-
-	// If ".kube" exists:
-	// 1. Copy it (and only it) to a new directory in the project build directory.
-	// 2. Create the Kustomize directory structure in each new `appDir` directory.
-	if checkFileExists(fmt.Sprintf("%s/%s/.kube", cwd, tmpDir)) {
-		fmt.Println(fmt.Sprintf("%s Service %s contains a .kube directory, Kustomizing...", color.Success(), color.Repository(serviceName)))
-		err := os.Mkdir(appDir, os.ModePerm)
+// This creates a file in `build/` for each of the keys in `m.Debug.Files`
+// and is useful to know which service fell into which category.
+func (m *Migrator) debug() {
+	for filename, v := range m.Debug.Files {
+		f, err := os.Create(fmt.Sprintf("%s/%s", m.Dirs.Build, filename))
 		if err != nil {
-			fmt.Println("err", err)
+			fmt.Println(err)
 		}
-		err = os.Rename(fmt.Sprintf("%s/.kube", tmpDir), fmt.Sprintf("%s/.kube", appDir))
-		if err != nil {
-			fmt.Println("err", err)
+		defer f.Close()
+		buf := bufio.NewWriter(f)
+		for _, name := range v {
+			_, err := buf.WriteString(fmt.Sprintf("%s\n", name))
+			if err != nil {
+				fmt.Println(err)
+			}
 		}
-	} else {
-		fmt.Println(fmt.Sprintf("%s Service %s does not contain a .kube directory, skipping...", color.Warning(), color.Repository(serviceName)))
-	}
-	// Regardless of whether the cloned serviceName contained a ".kube" directory, remove it.
-	// This may change, especially if the user wants all the repos in a project on their
-	// local machine.
-	err = os.RemoveAll(tmpDir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s Could not remove `%s`", color.Error(), tmpDir))
-		//		log.Fatal(err)
+		if err := buf.Flush(); err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
@@ -194,7 +207,7 @@ func (m *Migrator) kustomize() {
 	//			├── env
 	//			└── kustomization.yaml
 	//
-	dirs, err := os.ReadDir(m.Dirs.Build)
+	dirs, err := os.ReadDir(fmt.Sprintf("%s/%s", m.Dirs.Cloned, m.Project.Name))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Could not list contents of the build directory")
 		//		log.Fatal(err)
@@ -208,11 +221,17 @@ func (m *Migrator) kustomize() {
 
 	for _, dir := range dirs {
 		repo := dir.Name()
-		appDir := fmt.Sprintf("%s/%s", m.Dirs.Build, repo)
-		kubeDir := fmt.Sprintf("%s/.kube", appDir)
+		clonedAppDir := fmt.Sprintf("%s/%s/%s", m.Dirs.Cloned, m.Project.Name, repo)
+		appDir := fmt.Sprintf("%s/%s", m.Dirs.Project, repo)
+		kubeDir := fmt.Sprintf("%s/.kube", clonedAppDir)
 
-		// Create the Kustomized scaffolding for the service (repo).
-		m.scaffoldKustomize(appDir)
+		if !checkFileExists(kubeDir) {
+			m.Debug.Files["noKube"] = append(m.Debug.Files["noKube"], repo)
+			continue
+		}
+
+		// Create the build/serviceNameDir and Kustomized scaffolding for the service (repo).
+		m.scaffold(appDir)
 
 		// Tokenize and create the Kubernetes manifests, writing them to `base/`.
 		k := Service{Name: repo}
@@ -480,11 +499,17 @@ func (m *Migrator) kustomize() {
 }
 
 func (m *Migrator) migrate() {
-	// Create build dirs, i.e., "build/aion".
-	err := os.MkdirAll(m.Dirs.Build, os.ModePerm)
+	// Create "build/aion".
+	err := os.MkdirAll(m.Dirs.Project, os.ModePerm)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Could not create build dirs (build/PROJECT_NAME)")
-		//		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, "Could not create the build dirs (build/PROJECT_NAME)")
+		log.Fatal(err)
+	}
+	// Create "build/cloned".
+	err = os.MkdirAll(m.Dirs.Cloned, os.ModePerm)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not create the cloned dir (cloned/)")
+		log.Fatal(err)
 	}
 
 	if !m.Project.UseLogin {
@@ -498,28 +523,26 @@ func (m *Migrator) migrate() {
 
 		filescanner := bufio.NewScanner(readfile)
 		for filescanner.Scan() {
-			wg.Add(1)
-			go func(serviceName string) {
-				defer wg.Done()
-				m.clone(serviceName)
-			}(filescanner.Text())
+			m.clone(filescanner.Text())
 		}
 	} else {
 		for _, repositoryName := range *m.Project.RepositoryNames {
-			wg.Add(1)
-			go func(serviceName string) {
-				defer wg.Done()
-				m.clone(serviceName)
-			}(repositoryName)
+			m.clone(repositoryName)
 		}
 	}
-	wg.Wait()
 
 	m.kustomize()
+	m.debug()
 }
 
-func (m *Migrator) scaffoldKustomize(appDir string) {
-	err := os.Mkdir(fmt.Sprintf("%s/base", appDir), os.ModePerm)
+func (m *Migrator) scaffold(appDir string) {
+	err := os.Mkdir(appDir, os.ModePerm)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not create build service directory")
+		//		log.Fatal(err)
+	}
+	// Now, create directory structure for Kustomize.
+	err = os.MkdirAll(fmt.Sprintf("%s/base", appDir), os.ModePerm)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Could not create build service directory")
 		//		log.Fatal(err)
