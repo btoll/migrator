@@ -54,7 +54,7 @@ func hackAndBeHappyDeployment(filename, repoName string) []byte {
 		if strings.Contains(line, "{{ secrets_reader_config_map }}") {
 			// See `ansible-deployers/vars/main.yml`.
 			//			line = strings.Replace(line, "{{ secrets_reader_config_map }}", "kubernetes-container-user", 1)
-			line = strings.Replace(line, "{{ secrets_reader_config_map }}", "env", 1)
+			line = strings.Replace(line, "{{ secrets_reader_config_map }}", "kubernetes-container-user", 1)
 		}
 		// At least one deployment has tabs that confuse the yaml parser and throws an exception.
 		// Fix it by capturing the text and adding the appropriate number of spaces (10)...we hope...
@@ -94,7 +94,7 @@ func hackAndBeHappyIngress(contents, env string, hasAdditionalCerts bool) []stri
 
 	final := []string{}
 	var keepLines bool
-	if slices.Contains([]string{"development", "beta", "production"}, env) {
+	if slices.Contains([]string{"development", "beta", "staging", "production"}, env) {
 		keepLines = true
 	}
 	for _, line := range inspected {

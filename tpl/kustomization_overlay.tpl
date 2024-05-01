@@ -10,6 +10,6 @@ configMapGenerator:
   - env
 
 images:
-- name: {{ .Image }}
-  newName: {{ .Image }}
-  newTag: {{ .Environment }}
+- name: {{ .Image.Name }}
+  newName: {{ .Image.NewName }}
+  newTag: {{ .Image.NewTag }}
