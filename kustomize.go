@@ -54,6 +54,10 @@ func (m *Migrator) kustomize() {
 
 		if !checkFileExists(kubeDir) {
 			m.Debug.Files["noKube"] = append(m.Debug.Files["noKube"], repo)
+			err = os.RemoveAll(clonedAppDir)
+			if err != nil {
+				fmt.Println(err)
+			}
 			continue
 		}
 
@@ -122,12 +126,20 @@ func (m *Migrator) kustomize() {
 				defaultManifestValues := fmt.Sprintf("%s/environments/defaults-%s.yaml", kubeDir, before)
 				// Capture the default values because we will need them later (specifically, the image name).
 				defaultValues = getManifestValues(defaultManifestValues)
-				tokenized := tokenizeManifests(defaultValues, string(content))
+				tokenized, tokenMap := tokenizeManifests(defaultValues, string(content))
+				for k, v := range tokenMap {
+					// Any token that still exists in the `tokenized` string will have a non-zero value.
+					// This means that we haven't been able to replace it (not good).
+					if v > 0 {
+						m.Debug.Files["noMatchedToken"] = append(m.Debug.Files["noMatchedToken"], fmt.Sprintf("%s: %s", f, k))
+					}
+				}
 
-				// This is just fucking horrible.  Since `ansible-deployers` was injecting this into the
+				// This is just horrible.  Since `ansible-deployers` was injecting this into the
 				// manifest via a Python script, there's not a "nice" way to do it here except by doing
 				// the same horrible thing (injection).
 				// If it were part of the templated Jinja manifest it wouldn't be nearly as ugly as this.
+				// NOTE: This becomes the value of `nodeSelector`, which is crazy.
 				if strings.Contains(filename, "deployment") {
 					// We need to append the `nodeSelector` label to the tokenized string.
 					var nodeSelectorLabel string
@@ -185,12 +197,31 @@ func (m *Migrator) kustomize() {
 			defaultImage, ok := defaultValues["container_image"]
 			if !ok {
 				fmt.Fprintln(os.Stderr, "No default image")
+			} else {
+				containerImage := strings.Split(defaultImage.(string), ":")
+				var containerImageName string
+				var newTag string
+				if len(containerImage) == 0 {
+					containerImageName = env
+					newTag = env
+				} else if len(containerImage) == 1 {
+					containerImageName = containerImage[0]
+					newTag = env
+				} else if len(containerImage) == 2 {
+					containerImageName = containerImage[0]
+					newTag = containerImage[1]
+				}
+				k.Image = &Image{
+					Name:    containerImageName,
+					NewName: containerImageName,
+					NewTag:  newTag,
+				}
 			}
-			containerImage := strings.Split(defaultImage.(string), ":")
-			k.Image = &Image{
-				Name:    containerImage[0],
-				NewName: containerImage[0],
-				NewTag:  containerImage[1],
+			replicas, ok := defaultValues["replicas"]
+			if !ok {
+				fmt.Fprintln(os.Stderr, "No replicas")
+			} else {
+				k.Replicas = replicas.(int)
 			}
 			err = m.Template.ExecuteTemplate(f, "kustomization_overlay.tpl", k)
 			if err != nil {
@@ -257,7 +288,8 @@ func (m *Migrator) kustomize() {
 					getManifestValues(baseFile),
 					getManifestValues(overridesFile),
 				)
-				tokenized := tokenizeManifests(mergedValues, *k.HasIngress)
+				// TODO (tokenMap)
+				tokenized, _ := tokenizeManifests(mergedValues, *k.HasIngress)
 
 				// TODO: aion-multi-system-login-nginx has `additional_certs` in its `mergedValues` map BUT
 				// is looking for `additional_certificates` in its tokenized Ingress manifest.
@@ -325,9 +357,14 @@ func (m *Migrator) kustomize() {
 			}
 		}
 
-		err = os.RemoveAll(kubeDir)
+		//		err = os.RemoveAll(kubeDir)
+		//		if err != nil {
+		//			fmt.Println(err, fmt.Sprintf("%s Could not remove the %s", color.Warning(), kubeDir))
+		//		}
+
+		err = os.RemoveAll(clonedAppDir)
 		if err != nil {
-			fmt.Println(err, fmt.Sprintf("%s Could not remove the %s", color.Warning(), kubeDir))
+			fmt.Println(err)
 		}
 	}
 }

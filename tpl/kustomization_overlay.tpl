@@ -4,6 +4,10 @@ resources:
   - ingress.yaml
   {{ end }}
 
+replicas:
+ - name: {{ .Name }}
+   count: {{ .Replicas }}
+
 configMapGenerator:
 - name: env-{{ .Name }}
   envs:

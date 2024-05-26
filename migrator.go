@@ -40,6 +40,7 @@ type Service struct {
 	Name        string
 	Environment string
 	Image       *Image
+	Replicas    int
 	Resources   []string
 	HasIngress  *string
 }
@@ -97,15 +98,16 @@ func NewMigrator(project *Project) *Migrator {
 	}
 	return &Migrator{
 		Project:      project,
-		Environments: []string{"production", "staging", "beta", "development"},
+		Environments: []string{"production", "beta", "development"},
 		TplExt:       ".j2",
 		Template:     tpl,
 		Debug: &Debug{
 			Files: map[string]ServiceNames{
-				"error":       ServiceNames{},
-				"master":      ServiceNames{},
-				"development": ServiceNames{},
-				"noKube":      ServiceNames{},
+				"error":          ServiceNames{},
+				"master":         ServiceNames{},
+				"development":    ServiceNames{},
+				"noKube":         ServiceNames{},
+				"noMatchedToken": ServiceNames{},
 			},
 		},
 		Dirs: &BuildDirs{

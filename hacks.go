@@ -86,15 +86,15 @@ func hackAndBeHappyIngress(contents, env string, hasAdditionalCerts bool) []stri
 			i += 1
 			continue
 		}
-		if strings.Contains(line, "{{ access_subnet_ids }}") {
-			line = strings.Replace(line, "{{ access_subnet_ids }}", "TODO-access_subnet_ids-TODO", 1)
-		}
+		//		if strings.Contains(line, "{{ access_subnet_ids }}") {
+		//			line = strings.Replace(line, "{{ access_subnet_ids }}", "TODO-access_subnet_ids-TODO", 1)
+		//		}
 		inspected = append(inspected, line)
 	}
 
 	final := []string{}
 	var keepLines bool
-	if slices.Contains([]string{"development", "beta", "staging", "production"}, env) {
+	if slices.Contains([]string{"development", "beta", "production"}, env) {
 		keepLines = true
 	}
 	for _, line := range inspected {

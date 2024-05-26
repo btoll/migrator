@@ -6,11 +6,14 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+var reToken = regexp.MustCompile(`{{\s*[^{}][a-zA-Z_]*\s*}}`)
 
 func checkFileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
@@ -43,6 +46,18 @@ func getManifestValues(filename string) ManifestValues {
 	return base
 }
 
+func getTokensFromManifest(manifest string) map[string]int {
+	tokenMap := make(map[string]int)
+	matches := reToken.FindAllString(manifest, -1)
+	for _, match := range matches {
+		if _, ok := tokenMap[match]; !ok {
+			tokenMap[match] = 0
+		}
+		tokenMap[match] += 1
+	}
+	return tokenMap
+}
+
 func mapMerge(maps ...map[string]interface{}) map[string]interface{} {
 	res := make(map[string]interface{})
 	for _, m := range maps {
@@ -70,7 +85,8 @@ func replaceMerge(envvars map[string]string, vs ...T) {
 	}
 }
 
-func tokenizeManifests(data map[string]interface{}, manifest string) string {
+func tokenizeManifests(data map[string]interface{}, manifest string) (string, map[string]int) {
+	tokenMap := getTokensFromManifest(manifest)
 	templated := manifest
 	for k, v := range data {
 		// TODO should log these key/values
@@ -81,9 +97,13 @@ func tokenizeManifests(data map[string]interface{}, manifest string) string {
 		case int:
 			s = strconv.Itoa(v.(int))
 		}
-		templated = strings.ReplaceAll(templated, fmt.Sprintf("{{ %s }}", k), s)
+		var token string = fmt.Sprintf("{{ %s }}", k)
+		if strings.Contains(templated, token) {
+			templated = strings.ReplaceAll(templated, token, s)
+			tokenMap[token] = 0
+		}
 	}
-	return templated
+	return templated, tokenMap
 }
 
 func writeManifestFile(filename, contents, appDir string) {
