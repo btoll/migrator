@@ -1,6 +1,6 @@
 namespace: default
-commonLabels:
-  app: {{ .Name }}
+#commonLabels:
+#  app: {{ .Name }}
 
 resources:
   {{ range .Resources -}}
