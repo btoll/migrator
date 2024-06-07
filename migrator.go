@@ -37,12 +37,13 @@ type EnvironmentVariable struct {
 
 // This is **not** a Kubernetes service!
 type Service struct {
-	Name        string
-	Environment string
-	Image       *Image
-	Replicas    int
-	Resources   []string
-	HasIngress  *string
+	Name          string
+	NameNoHyphens string
+	Environment   string
+	Image         *Image
+	Replicas      int
+	Resources     []string
+	HasIngress    *string
 }
 
 // Each image will be defined in `overlays/ENVIRONMENT/kustomization.yaml`.
@@ -182,6 +183,7 @@ func (m *Migrator) migrate() {
 func (m *Migrator) scaffold(appDir string) {
 	err := os.Mkdir(appDir, os.ModePerm)
 	if err != nil {
+		fmt.Println(err)
 		fmt.Fprintln(os.Stderr, "Could not create build service directory")
 		//		log.Fatal(err)
 	}
