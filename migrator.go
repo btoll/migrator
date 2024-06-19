@@ -85,7 +85,9 @@ type Login struct {
 type Project struct {
 	Name            string
 	Filename        string
+	BuildDir        string
 	UseLogin        bool
+	CloneOnly       bool
 	Login           *Login
 	RepositoryNames *RepositoryNames
 }
@@ -112,11 +114,11 @@ func NewMigrator(project *Project) *Migrator {
 			},
 		},
 		Dirs: &BuildDirs{
-			Build:                    "build",
-			Project:                  fmt.Sprintf("%s/%s", "build", project.Name),
-			Cloned:                   "build/cloned",
-			AnsibleDeployers:         "build/ansible-deployers",
-			AnsibleDeployerOverrides: "build/ansible-deployers/files/kubernetes_environment_overrides",
+			Build:                    project.BuildDir,
+			Project:                  fmt.Sprintf("%s/%s", project.BuildDir, project.Name),
+			Cloned:                   fmt.Sprintf("%s/cloned", project.BuildDir),
+			AnsibleDeployers:         fmt.Sprintf("%s/ansible-deployers", project.BuildDir),
+			AnsibleDeployerOverrides: fmt.Sprintf("%s/ansible-deployers/files/kubernetes_environment_overrides", project.BuildDir),
 		},
 	}
 }
@@ -176,8 +178,10 @@ func (m *Migrator) migrate() {
 		}
 	}
 
-	m.kustomize()
-	m.debug()
+	if !m.Project.CloneOnly {
+		m.kustomize()
+		m.debug()
+	}
 }
 
 func (m *Migrator) scaffold(appDir string) {

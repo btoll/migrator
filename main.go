@@ -15,6 +15,8 @@ import (
 func main() {
 	filename := flag.String("file", "", "The name of the file that contains the repositories to clone")
 	project := flag.String("project", "", "The name of the project")
+	buildDir := flag.String("build-dir", "build", "The location of the build directory.  Defaults to `./build`.")
+	cloneOnly := flag.Bool("clone-only", false, "Clone but don't kustomize")
 	flag.Parse()
 
 	if *project == "" {
@@ -56,8 +58,10 @@ func main() {
 			}
 		}
 		p = &Project{
-			Name:     strings.ToLower(*project),
-			UseLogin: true,
+			Name:      strings.ToLower(*project),
+			BuildDir:  *buildDir,
+			UseLogin:  true,
+			CloneOnly: *cloneOnly,
 			Login: &Login{
 				Username: username,
 				Password: password,
@@ -66,8 +70,10 @@ func main() {
 		}
 	} else {
 		p = &Project{
-			Name:     strings.ToLower(*project),
-			Filename: *filename,
+			Name:      strings.ToLower(*project),
+			BuildDir:  *buildDir,
+			Filename:  *filename,
+			CloneOnly: *cloneOnly,
 		}
 	}
 
