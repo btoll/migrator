@@ -3,7 +3,7 @@ PROGRAM		= migrator
 BUILDDIR	= build
 prefix		= /usr
 
-.PHONY: build clean cleanBuild distclean run install uninstall
+.PHONY: build clean cleanBuild distclean install uninstall
 
 build: $(PROGRAM)
 
@@ -17,8 +17,6 @@ cleanBuild:
 	rm -rf $(BUILDDIR)
 
 distclean: clean
-
-run: cleanBuild clean build
 
 # https://www.gnu.org/software/make/manual/html_node/DESTDIR.html
 install:

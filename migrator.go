@@ -37,13 +37,14 @@ type EnvironmentVariable struct {
 
 // This is **not** a Kubernetes service!
 type Service struct {
-	Name          string
-	NameNoHyphens string
-	Environment   string
-	Image         *Image
-	Replicas      int
-	Resources     []string
-	HasIngress    *string
+	Name              string
+	NameNoHyphens     string
+	Environment       string
+	Image             *Image
+	Replicas          int
+	Resources         *Resources
+	ResourceManifests []string
+	HasIngress        *string
 }
 
 // Each image will be defined in `overlays/ENVIRONMENT/kustomization.yaml`.
@@ -51,6 +52,13 @@ type Image struct {
 	Name    string
 	NewName string
 	NewTag  string
+}
+
+type Resources struct {
+	RequestsMemory string
+	RequestsCPU    string
+	LimitsMemory   string
+	LimitsCPU      string
 }
 
 type BuildDirs struct {

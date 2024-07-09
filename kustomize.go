@@ -11,6 +11,43 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func getResources(defaultValues ManifestValues) *Resources {
+	r := &Resources{}
+	var b bool
+	limitsCPU, ok := defaultValues["resources_limits_cpu"]
+	if !ok {
+		fmt.Fprintln(os.Stderr, "resources_limits_cpu")
+	} else {
+		r.LimitsCPU = limitsCPU.(string)
+		b = true
+	}
+	limitsMemory, ok := defaultValues["resources_limits_memory"]
+	if !ok {
+		fmt.Fprintln(os.Stderr, "No resources_limits_memory")
+	} else {
+		r.LimitsMemory = limitsMemory.(string)
+		b = true
+	}
+	requestsCPU, ok := defaultValues["resources_requests_cpu"]
+	if !ok {
+		fmt.Fprintln(os.Stderr, "No resources_requests_cpu")
+	} else {
+		r.RequestsCPU = requestsCPU.(string)
+		b = true
+	}
+	requestsMemory, ok := defaultValues["resources_requests_memory"]
+	if !ok {
+		fmt.Fprintln(os.Stderr, "No resources_requests_memory")
+	} else {
+		r.RequestsMemory = requestsMemory.(string)
+		b = true
+	}
+	if b {
+		return r
+	}
+	return nil
+}
+
 // name: aion-identity-service
 //var reDeploymentName = regexp.MustCompile(`\s*name:\s(?P<DeploymentName>[a-zA-Z-]*)$`)
 
@@ -124,6 +161,7 @@ func (m *Migrator) kustomize() {
 				defaultManifestValues := fmt.Sprintf("%s/environments/defaults-%s.yaml", kubeDir, filenameNoExtension)
 				// Capture the default values because we will need them later (specifically, the image name).
 				defaultValues = getManifestValues(defaultManifestValues)
+				k.Resources = getResources(defaultValues)
 
 				if hasMultipleDeployments {
 					serviceDir = fmt.Sprintf("%s/%s", appDir, filenameNoExtension)
@@ -177,7 +215,7 @@ func (m *Migrator) kustomize() {
 				// Instead, flag it so we know to add it as `overlays/ENV/patch_ingress.yaml`
 				// (see below).
 				if !strings.Contains(filename, "ingress") {
-					k.Resources = append(k.Resources, filename)
+					k.ResourceManifests = append(k.ResourceManifests, filename)
 					writeManifestFile(filename, tokenized, serviceDir)
 				} else {
 					k.HasIngress = &tokenized
@@ -243,10 +281,26 @@ func (m *Migrator) kustomize() {
 				} else {
 					k.Replicas = replicas.(int)
 				}
+
 				err = m.Template.ExecuteTemplate(f, "kustomization_overlay.tpl", k)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, "Could not execute template `kustomization_overlay.tpl`")
 					//				log.Fatal(err)
+				}
+
+				if env != "development" && k.Resources != nil {
+					f, err := os.Create(fmt.Sprintf("%s/overlays/%s/deployment_patch.yaml", serviceDir, env))
+					if err != nil {
+						fmt.Fprintln(os.Stderr, fmt.Sprintf("Could not create %s/overlays/%s/deployment_patch.yaml", serviceDir, env))
+						//				log.Fatal(err)
+					}
+					defer f.Close()
+
+					err = m.Template.ExecuteTemplate(f, "deployment_patch.tpl", k.Resources)
+					if err != nil {
+						fmt.Fprintln(os.Stderr, "Could not execute template `deployment_patch.tpl`")
+						//				log.Fatal(err)
+					}
 				}
 
 				envFile := fmt.Sprintf("%s/environments/%s-%s.yaml", kubeDir, env, k.NameNoHyphens)
